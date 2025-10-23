@@ -4,10 +4,13 @@ local M = {}
 
 local defaults = {
   enable_on_start = true,
-  keymap = "<leader>ad",
+  keymap = "<leader>adt",
   watch_interval = 750,
   open_in_tab = true,
-  accept_keymap = "<leader>aa",
+  accept_keymap = "<leader>ada",
+  refresh_keymap = "<leader>adr",
+  full_file_keymap = "<leader>adf",
+  full_file_context = 100000,
   diff_cmd = { "git", "diff", "--no-color" },
   status_cmd = { "git", "status", "--porcelain" },
   highlight_deletions = "DiffDelete",
@@ -19,6 +22,7 @@ local state = {
   watchers = {},
   diff_tab = nil,
   diff_bufs = {},
+  buf_entries = {},
   prev_buffers = {},
   last_head = {},
 }
@@ -106,6 +110,22 @@ local function read_git_blob(root, relative_path)
   return lines
 end
 
+local function strip_diff_headers(lines)
+  local filtered = {}
+  for _, line in ipairs(lines) do
+    local skip = line:match("^diff %-%-git%s")
+      or line:match("^index%s")
+      or line:match("^%-%-%-")
+      or line:match("^%+%+%+")
+      or line:match("^new file mode")
+      or line:match("^deleted file mode")
+    if not skip then
+      table.insert(filtered, line)
+    end
+  end
+  return filtered
+end
+
 local function stage_path(root, relative_path)
   if not root then
     return false
@@ -128,8 +148,10 @@ local function close_diff_tab()
     if vim.api.nvim_buf_is_valid(buf) then
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
     end
+    state.buf_entries[buf] = nil
   end
   state.diff_bufs = {}
+  state.buf_entries = {}
   if state.diff_tab and vim.api.nvim_tabpage_is_valid(state.diff_tab) then
     vim.api.nvim_set_current_tabpage(state.diff_tab)
     vim.cmd("tabclose")
@@ -200,7 +222,7 @@ local function parse_status(lines)
   return results
 end
 
-local function build_new_file_diff(root, relative_path)
+local function build_new_file_diff(root, relative_path, opts)
   local lines = read_worktree_file(root, relative_path)
   if not lines then
     return {
@@ -225,10 +247,13 @@ local function build_new_file_diff(root, relative_path)
   for _, line in ipairs(lines) do
     table.insert(diff_lines, "+" .. line)
   end
+  if opts and opts.full then
+    diff_lines = strip_diff_headers(diff_lines)
+  end
   return diff_lines
 end
 
-local function build_deleted_file_diff(root, relative_path)
+local function build_deleted_file_diff(root, relative_path, opts)
   local lines = read_git_blob(root, relative_path)
   if not lines then
     return {
@@ -256,11 +281,17 @@ local function build_deleted_file_diff(root, relative_path)
   for _, line in ipairs(lines) do
     table.insert(diff_lines, "-" .. line)
   end
+  if opts and opts.full then
+    diff_lines = strip_diff_headers(diff_lines)
+  end
   return diff_lines
 end
 
-local function build_modified_diff(root, relative_path, config)
+local function build_modified_diff(root, relative_path, config, opts)
   local cmd = vim.deepcopy(config.diff_cmd)
+  if opts and opts.full then
+    table.insert(cmd, string.format("--unified=%d", config.full_file_context or 100000))
+  end
   table.insert(cmd, "--")
   table.insert(cmd, relative_path)
   local output, code, raw = system_list(cmd, root)
@@ -274,18 +305,26 @@ local function build_modified_diff(root, relative_path, config)
   if vim.tbl_isempty(output) then
     output = { string.format("No diff for %s", relative_path) }
   end
+  if opts and opts.full then
+    output = strip_diff_headers(output)
+  end
   return output
 end
 
-local function build_diff_buffer(root, entry, config)
+local function build_diff_lines(root, entry, config, opts)
   local diff_lines
   if entry.kind == "new" then
-    diff_lines = build_new_file_diff(root, entry.path)
+    diff_lines = build_new_file_diff(root, entry.path, opts)
   elseif entry.kind == "deleted" then
-    diff_lines = build_deleted_file_diff(root, entry.path)
+    diff_lines = build_deleted_file_diff(root, entry.path, opts)
   else
-    diff_lines = build_modified_diff(root, entry.path, config)
+    diff_lines = build_modified_diff(root, entry.path, config, opts)
   end
+  return diff_lines
+end
+
+local function build_diff_buffer(root, entry, config)
+  local diff_lines = build_diff_lines(root, entry, config)
   if not diff_lines then
     return nil
   end
@@ -300,6 +339,14 @@ local function build_diff_buffer(root, entry, config)
   vim.bo[buf].swapfile = false
   vim.bo[buf].buflisted = true
 
+  state.buf_entries[buf] = { path = entry.path, kind = entry.kind }
+  vim.api.nvim_create_autocmd("BufWipeout", {
+    buffer = buf,
+    callback = function()
+      state.buf_entries[buf] = nil
+    end,
+  })
+
   if config.accept_keymap then
     local repo_root = root
     vim.keymap.set("n", config.accept_keymap, function()
@@ -312,6 +359,28 @@ local function build_diff_buffer(root, entry, config)
       end
     end, { buffer = buf, desc = "Stage file with git diff viewer" })
   end
+
+  if config.full_file_keymap then
+    local repo_root = root
+    vim.keymap.set("n", config.full_file_keymap, function()
+      if not repo_root then
+        log("not inside a git repository", vim.log.levels.WARN)
+        return
+      end
+      local current_entry = state.buf_entries[buf]
+      if not current_entry then
+        return
+      end
+      local lines = build_diff_lines(repo_root, current_entry, M.config, { full = true })
+      if not lines then
+        return
+      end
+      vim.bo[buf].modifiable = true
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+      vim.bo[buf].modifiable = false
+    end, { buffer = buf, desc = "Show full diff (git diff viewer)" })
+  end
+
   return buf
 end
 
@@ -463,6 +532,12 @@ function M.setup(opts)
   vim.api.nvim_create_user_command("GitDiffViewerRefresh", function()
     M.refresh()
   end, { desc = "Manually refresh git diff viewer" })
+
+  if M.config.refresh_keymap then
+    vim.keymap.set("n", M.config.refresh_keymap, function()
+      M.refresh()
+    end, { desc = "Refresh git diff viewer" })
+  end
 
   vim.api.nvim_create_autocmd("DirChanged", {
     callback = function()
