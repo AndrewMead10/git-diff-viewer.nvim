@@ -4,12 +4,12 @@ local M = {}
 
 local defaults = {
   enable_on_start = true,
-  keymap = "<leader>adt",
+  keymap = "<leader>agt",
   watch_interval = 750,
   open_in_tab = true,
-  accept_keymap = "<leader>ada",
-  refresh_keymap = "<leader>adr",
-  full_file_keymap = "<leader>adf",
+  accept_keymap = "<leader>aga",
+  refresh_keymap = "<leader>agr",
+  full_file_keymap = "<leader>agf",
   full_file_context = 100000,
   diff_cmd = { "git", "diff", "--no-color" },
   status_cmd = { "git", "status", "--porcelain" },
@@ -114,12 +114,12 @@ local function strip_diff_headers(lines)
   local filtered = {}
   for _, line in ipairs(lines) do
     local skip = line:match("^diff %-%-git%s")
-      or line:match("^index%s")
-      or line:match("^%-%-%-")
-      or line:match("^%+%+%+")
-      or line:match("^new file mode")
-      or line:match("^deleted file mode")
-      or line:match("^@@")
+        or line:match("^index%s")
+        or line:match("^%-%-%-")
+        or line:match("^%+%+%+")
+        or line:match("^new file mode")
+        or line:match("^deleted file mode")
+        or line:match("^@@")
     if not skip then
       table.insert(filtered, line)
     end

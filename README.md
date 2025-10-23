@@ -9,7 +9,7 @@ Show unstaged inline diffs whenever you change branches. Designed for AstroNvim 
 - Highlights additions (`DiffAdd`) and deletions (`DiffDelete`) using standard diff syntax; new files show the entire file as additions, deleted files show the full removed contents.
 - Stage the current file directly from the diff buffer with `<leader>ada` (configurable).
 - Switch to a whole-file diff view (headers stripped) with `<leader>adf`.
-- Toggle on/off with `<leader>adt`, `:GitDiffViewerToggle`, or your own mapping.
+- Toggle on/off with `<leader>ag`, `:GitDiffViewerToggle`, or your own mapping.
 - Optional manual refresh via `:GitDiffViewerRefresh`.
 
 ## Installation
@@ -41,7 +41,7 @@ use({
 ```lua
 require("git_diff_viewer").setup({
   enable_on_start = true,  -- start enabled
-  keymap = "<leader>adt",  -- set to false to skip default toggle mapping
+  keymap = "<leader>ag",   -- set to false to skip default toggle mapping
   watch_interval = 750,     -- milliseconds between HEAD checks
   open_in_tab = true,       -- open diffs in their own tab page
   accept_keymap = "<leader>ada", -- buffer-local mapping to stage the file
@@ -59,7 +59,7 @@ require("git_diff_viewer").setup({
 - While focused on a diff buffer, press `<leader>ada` to stage the file and refresh the view.
 - Press `<leader>adr` (or `:GitDiffViewerRefresh`) anytime to re-render the diffs after external changes.
 - Press `<leader>adf` inside a diff buffer to swap into a whole-file diff (without the `diff --git`/`index` headers) for easier reading.
-- Use `<leader>adt` (or `:GitDiffViewerToggle`) to disable the watcher and restore your previous buffers.
+- Use `<leader>ag` (or `:GitDiffViewerToggle`) to disable the watcher and restore your previous buffers.
 
 ## Notes
 
