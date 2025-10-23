@@ -323,8 +323,8 @@ local function build_diff_lines(root, entry, config, opts)
   return diff_lines
 end
 
-local function build_diff_buffer(root, entry, config)
-  local diff_lines = build_diff_lines(root, entry, config)
+local function build_diff_buffer(root, entry, config, opts)
+  local diff_lines = build_diff_lines(root, entry, config, opts)
   if not diff_lines then
     return nil
   end
@@ -339,7 +339,7 @@ local function build_diff_buffer(root, entry, config)
   vim.bo[buf].swapfile = false
   vim.bo[buf].buflisted = true
 
-  state.buf_entries[buf] = { path = entry.path, kind = entry.kind }
+  state.buf_entries[buf] = { path = entry.path, kind = entry.kind, full = opts and opts.full or false }
   vim.api.nvim_create_autocmd("BufWipeout", {
     buffer = buf,
     callback = function()
@@ -371,7 +371,8 @@ local function build_diff_buffer(root, entry, config)
       if not current_entry then
         return
       end
-      local lines = build_diff_lines(repo_root, current_entry, M.config, { full = true })
+      current_entry.full = not current_entry.full
+      local lines = build_diff_lines(repo_root, current_entry, M.config, { full = current_entry.full })
       if not lines then
         return
       end
