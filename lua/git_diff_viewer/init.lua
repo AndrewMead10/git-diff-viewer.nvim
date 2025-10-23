@@ -85,13 +85,38 @@ local function system_list(cmd, cwd)
   return output, code
 end
 
+local function read_worktree_file(root, relative_path)
+  if not root or not relative_path or relative_path == "" then
+    return nil
+  end
+  local absolute = vim.fs.joinpath(root, relative_path)
+  if uv.fs_stat(absolute) then
+    return vim.fn.readfile(absolute)
+  end
+  return nil
+end
+
+local function read_git_blob(root, relative_path)
+  if not relative_path or relative_path == "" then
+    return nil
+  end
+  local spec = string.format("HEAD:%s", relative_path)
+  local lines = select(1, system_list({ "git", "show", spec }, root))
+  return lines
+end
+
 local function close_diff_tab()
+  for _, buf in ipairs(state.diff_bufs) do
+    if vim.api.nvim_buf_is_valid(buf) then
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    end
+  end
+  state.diff_bufs = {}
   if state.diff_tab and vim.api.nvim_tabpage_is_valid(state.diff_tab) then
     vim.api.nvim_set_current_tabpage(state.diff_tab)
     vim.cmd("tabclose")
   end
   state.diff_tab = nil
-  state.diff_bufs = {}
 end
 
 local function restore_prev_buffers()
@@ -137,24 +162,90 @@ local function parse_status(lines)
       local staged = line:sub(1, 1)
       local unstaged = line:sub(2, 2)
       local path = vim.trim(line:sub(4))
+      if path:find(" -> ", 1, true) then
+        local _, new_path = path:match("(.+)%s->%s(.+)")
+        if new_path and new_path ~= "" then
+          path = new_path
+        end
+      end
       if unstaged ~= " " or staged == "?" then
-        table.insert(results, path)
+        local kind = "modified"
+        if staged == "?" and unstaged == "?" then
+          kind = "new"
+        elseif unstaged == "D" then
+          kind = "deleted"
+        end
+        table.insert(results, { path = path, kind = kind })
       end
     end
   end
   return results
 end
 
-local function build_diff_buffer(root, relative_path, config)
+local function build_new_file_diff(root, relative_path)
+  local lines = read_worktree_file(root, relative_path)
+  if not lines then
+    return {
+      string.format("diff --git a/%s b/%s", relative_path, relative_path),
+      string.format("new file %s missing from working tree", relative_path),
+    }
+  end
+  local count = #lines
+  local header
+  if count > 0 then
+    header = string.format("@@ -0,0 +1,%d @@", count)
+  else
+    header = "@@ -0,0 +0,0 @@"
+  end
+  local diff_lines = {
+    string.format("diff --git a/%s b/%s", relative_path, relative_path),
+    string.format("new file mode 100644"),
+    "--- /dev/null",
+    string.format("+++ b/%s", relative_path),
+    header,
+  }
+  for _, line in ipairs(lines) do
+    table.insert(diff_lines, "+" .. line)
+  end
+  return diff_lines
+end
+
+local function build_deleted_file_diff(root, relative_path)
+  local lines = read_git_blob(root, relative_path)
+  if not lines then
+    return {
+      string.format("diff --git a/%s b/%s", relative_path, relative_path),
+      string.format("--- a/%s", relative_path),
+      string.format("+++ /dev/null"),
+      string.format("@@ -0,0 +0,0 @@"),
+      string.format("-unable to read deleted file %s", relative_path),
+    }
+  end
+  local count = #lines
+  local header
+  if count > 0 then
+    header = string.format("@@ -1,%d +0,0 @@", count)
+  else
+    header = "@@ -0,0 +0,0 @@"
+  end
+  local diff_lines = {
+    string.format("diff --git a/%s b/%s", relative_path, relative_path),
+    string.format("deleted file mode 100644"),
+    string.format("--- a/%s", relative_path),
+    "+++ /dev/null",
+    header,
+  }
+  for _, line in ipairs(lines) do
+    table.insert(diff_lines, "-" .. line)
+  end
+  return diff_lines
+end
+
+local function build_modified_diff(root, relative_path, config)
   local cmd = vim.deepcopy(config.diff_cmd)
   table.insert(cmd, "--")
   table.insert(cmd, relative_path)
-  local output, code, raw
-  if cmd[1] == "git" then
-    output, code, raw = system_list(cmd, root)
-  else
-    output, code, raw = system_list(cmd, root)
-  end
+  local output, code, raw = system_list(cmd, root)
   if not output then
     log(string.format("failed to diff %s (%d)", relative_path, code or -1), vim.log.levels.WARN)
     if raw then
@@ -165,9 +256,25 @@ local function build_diff_buffer(root, relative_path, config)
   if vim.tbl_isempty(output) then
     output = { string.format("No diff for %s", relative_path) }
   end
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_name(buf, string.format("[diff] %s", relative_path))
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, output)
+  return output
+end
+
+local function build_diff_buffer(root, entry, config)
+  local diff_lines
+  if entry.kind == "new" then
+    diff_lines = build_new_file_diff(root, entry.path)
+  elseif entry.kind == "deleted" then
+    diff_lines = build_deleted_file_diff(root, entry.path)
+  else
+    diff_lines = build_modified_diff(root, entry.path, config)
+  end
+  if not diff_lines then
+    return nil
+  end
+
+  local buf = vim.api.nvim_create_buf(true, true)
+  vim.api.nvim_buf_set_name(buf, entry.path)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, diff_lines)
   vim.bo[buf].filetype = "diff"
   vim.bo[buf].modifiable = false
   vim.bo[buf].buftype = "nofile"
@@ -175,7 +282,7 @@ local function build_diff_buffer(root, relative_path, config)
   return buf
 end
 
-local function open_diff_windows(root, files, config)
+local function open_diff_buffers(root, files, config)
   close_diff_tab()
   if config.open_in_tab then
     vim.cmd("tabnew")
@@ -194,20 +301,21 @@ local function open_diff_windows(root, files, config)
   end
 
   local first = true
-  for _, rel in ipairs(files) do
-    local buf = build_diff_buffer(root, rel, config)
+  for _, entry in ipairs(files) do
+    local buf = build_diff_buffer(root, entry, config)
     if buf then
-      if not first then
-        vim.cmd("belowright split")
-      else
+      if first then
+        vim.api.nvim_win_set_buf(0, buf)
         first = false
+      else
+        vim.fn.bufload(buf)
       end
-      local win = vim.api.nvim_get_current_win()
-      vim.api.nvim_win_set_buf(win, buf)
       table.insert(state.diff_bufs, buf)
     end
   end
-  vim.cmd("wincmd =")
+  if state.diff_tab and vim.api.nvim_tabpage_is_valid(state.diff_tab) and not vim.tbl_isempty(state.diff_bufs) then
+    vim.api.nvim_set_current_buf(state.diff_bufs[1])
+  end
 end
 
 local function handle_branch_switch(root, config)
@@ -221,7 +329,7 @@ local function handle_branch_switch(root, config)
     return
   end
   local files = parse_status(status)
-  open_diff_windows(root, files, config)
+  open_diff_buffers(root, files, config)
 end
 
 local function on_head_change(root, config)
