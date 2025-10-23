@@ -7,6 +7,7 @@ Show unstaged inline diffs whenever you change branches. Designed for AstroNvim 
 - Watches `.git/HEAD` and reacts as soon as the branch changes.
 - Closes your current listed buffers and opens a fresh tab populated with one scratch buffer per unstaged file (no splits to manage).
 - Highlights additions (`DiffAdd`) and deletions (`DiffDelete`) using standard diff syntax; new files show the entire file as additions, deleted files show the full removed contents.
+- Stage the current file directly from the diff buffer with `<leader>aa` (configurable).
 - Toggle on/off with `<leader>ad`, `:GitDiffViewerToggle`, or your own mapping.
 - Optional manual refresh via `:GitDiffViewerRefresh`.
 
@@ -44,6 +45,7 @@ require("git_diff_viewer").setup({
   keymap = "<leader>ad",   -- set to false to skip default mapping
   watch_interval = 750,     -- milliseconds between HEAD checks
   open_in_tab = true,       -- open diffs in their own tab page
+  accept_keymap = "<leader>aa", -- buffer-local mapping to stage the file
   diff_cmd = { "git", "diff", "--no-color" },
   status_cmd = { "git", "status", "--porcelain" },
 })
@@ -52,6 +54,7 @@ require("git_diff_viewer").setup({
 ## Usage
 
 - Switch branches with `git checkout`, `git switch`, or any tooling. The plugin detects the HEAD change and opens a fresh tab containing one diff buffer per unstaged file (each buffer named after the file).
+- While focused on a diff buffer, press `<leader>aa` to stage the file and refresh the view.
 - Use `<leader>ad` (or `:GitDiffViewerToggle`) to disable the watcher and restore your previous buffers.
 - Run `:GitDiffViewerRefresh` if you want to re-render manually.
 

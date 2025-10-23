@@ -7,6 +7,7 @@ local defaults = {
   keymap = "<leader>ad",
   watch_interval = 750,
   open_in_tab = true,
+  accept_keymap = "<leader>aa",
   diff_cmd = { "git", "diff", "--no-color" },
   status_cmd = { "git", "status", "--porcelain" },
   highlight_deletions = "DiffDelete",
@@ -103,6 +104,23 @@ local function read_git_blob(root, relative_path)
   local spec = string.format("HEAD:%s", relative_path)
   local lines = select(1, system_list({ "git", "show", spec }, root))
   return lines
+end
+
+local function stage_path(root, relative_path)
+  if not root then
+    return false
+  end
+  local output, code, stderr_output = system_list({ "git", "add", "--", relative_path }, root)
+  if not output and code ~= 0 then
+    local msg = string.format("failed to stage %s", relative_path)
+    if stderr_output and #stderr_output > 0 then
+      msg = msg .. ": " .. table.concat(stderr_output, "\\n")
+    end
+    log(msg, vim.log.levels.ERROR)
+    return false
+  end
+  log(string.format("staged %s", relative_path))
+  return true
 end
 
 local function close_diff_tab()
@@ -278,7 +296,22 @@ local function build_diff_buffer(root, entry, config)
   vim.bo[buf].filetype = "diff"
   vim.bo[buf].modifiable = false
   vim.bo[buf].buftype = "nofile"
-  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].bufhidden = "hide"
+  vim.bo[buf].swapfile = false
+  vim.bo[buf].buflisted = true
+
+  if config.accept_keymap then
+    local repo_root = root
+    vim.keymap.set("n", config.accept_keymap, function()
+      if not repo_root then
+        log("not inside a git repository", vim.log.levels.WARN)
+        return
+      end
+      if stage_path(repo_root, entry.path) then
+        M.refresh()
+      end
+    end, { buffer = buf, desc = "Stage file with git diff viewer" })
+  end
   return buf
 end
 
