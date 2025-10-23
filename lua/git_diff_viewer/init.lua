@@ -119,6 +119,7 @@ local function strip_diff_headers(lines)
       or line:match("^%+%+%+")
       or line:match("^new file mode")
       or line:match("^deleted file mode")
+      or line:match("^@@")
     if not skip then
       table.insert(filtered, line)
     end
