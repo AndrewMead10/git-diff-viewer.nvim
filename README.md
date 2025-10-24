@@ -43,6 +43,8 @@ require("git_diff_viewer").setup({
   enable_on_start = true,  -- start enabled
   keymap = "<leader>ag",   -- set to false to skip default toggle mapping
   watch_interval = 750,     -- milliseconds between HEAD checks
+  git_lock_retry_delay = 100, -- delay (ms) before re-checking when Git holds a lock
+  git_lock_max_attempts = 50, -- number of lock checks before giving up
   open_in_tab = true,       -- open diffs in their own tab page
   accept_keymap = "<leader>ada", -- buffer-local mapping to stage the file
   refresh_keymap = "<leader>adr", -- global mapping to refresh the view
@@ -66,6 +68,7 @@ require("git_diff_viewer").setup({
 - The plugin only lists files with unstaged modifications (including untracked files). Stage or discard changes to remove them from the view.
 - `open_in_tab = false` keeps the diffs in the current tab if you prefer a simpler layout.
 - When disabling the plugin we re-add your previous buffers via `:badd` so they reappear in your buffer list; reopen them manually if you need their windows rebuilt.
+- We wait for Git lock files (e.g. `.git/index.lock`) to disappear before refreshing so branch switches and other Git operations can finish cleanly.
 
 ## Roadmap
 

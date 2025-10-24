@@ -6,6 +6,8 @@ local defaults = {
   enable_on_start = true,
   keymap = "<leader>agt",
   watch_interval = 750,
+  git_lock_retry_delay = 100,
+  git_lock_max_attempts = 50,
   open_in_tab = true,
   accept_keymap = "<leader>aga",
   refresh_keymap = "<leader>agr",
@@ -25,6 +27,7 @@ local state = {
   buf_entries = {},
   prev_buffers = {},
   last_head = {},
+  pending_refresh = {},
 }
 
 local function log(msg, level)
@@ -194,6 +197,49 @@ local function collect_and_close_listed_bufs()
     end
   end
   state.prev_buffers = collected
+end
+
+local function git_lock_exists(root)
+  if not root then
+    return false
+  end
+  local git_dir = vim.fs.joinpath(root, ".git")
+  if not uv.fs_stat(git_dir) then
+    return false
+  end
+  local lock_paths = {
+    vim.fs.joinpath(git_dir, "index.lock"),
+    vim.fs.joinpath(git_dir, "HEAD.lock"),
+  }
+  for _, lock in ipairs(lock_paths) do
+    if uv.fs_stat(lock) then
+      return true
+    end
+  end
+  return false
+end
+
+local function wait_for_git_idle(root, config, attempt)
+  attempt = attempt or 0
+  if not state.enabled then
+    state.pending_refresh[root] = nil
+    return
+  end
+  if git_lock_exists(root) then
+    local max_attempts = config.git_lock_max_attempts or defaults.git_lock_max_attempts
+    if attempt >= max_attempts then
+      log(string.format("git repository busy (lock present after %d checks); skipping refresh", attempt), vim.log.levels.WARN)
+      state.pending_refresh[root] = nil
+      return
+    end
+    local delay = config.git_lock_retry_delay or defaults.git_lock_retry_delay
+    vim.defer_fn(function()
+      wait_for_git_idle(root, config, attempt + 1)
+    end, delay)
+    return
+  end
+  state.pending_refresh[root] = nil
+  handle_branch_switch(root, config)
 end
 
 local function parse_status(lines)
@@ -437,8 +483,12 @@ local function handle_branch_switch(root, config)
 end
 
 local function on_head_change(root, config)
+  if state.pending_refresh[root] then
+    return
+  end
+  state.pending_refresh[root] = true
   vim.schedule(function()
-    handle_branch_switch(root, config)
+    wait_for_git_idle(root, config, 0)
   end)
 end
 
@@ -474,6 +524,7 @@ local function stop_watches()
     state.watchers[root] = nil
     state.last_head[root] = nil
   end
+  state.pending_refresh = {}
 end
 
 local function ensure_watch(config)
