@@ -142,7 +142,7 @@ local function stage_path(root, relative_path)
     if stderr_output and #stderr_output > 0 then
       msg = msg .. ": " .. table.concat(stderr_output, "\\n")
     end
-    log(msg, vim.log.levels.ERROR)
+    print(string.format("git-diff-viewer: %s", msg))
     return false
   end
   log(string.format("staged %s", relative_path))
@@ -230,7 +230,7 @@ local function wait_for_git_idle(root, config, attempt)
   if git_lock_exists(root) then
     local max_attempts = config.git_lock_max_attempts or defaults.git_lock_max_attempts
     if attempt >= max_attempts then
-      log(string.format("git repository busy (lock present after %d checks); skipping refresh", attempt), vim.log.levels.WARN)
+      print(string.format("git-diff-viewer: git repository busy (lock present after %d checks); skipping refresh", attempt))
       state.pending_refresh[root] = nil
       return
     end
@@ -347,9 +347,9 @@ local function build_modified_diff(root, relative_path, config, opts)
   table.insert(cmd, relative_path)
   local output, code, raw = system_list(cmd, root)
   if not output then
-    log(string.format("failed to diff %s (%d)", relative_path, code or -1), vim.log.levels.WARN)
+    print(string.format("git-diff-viewer: failed to diff %s (%d)", relative_path, code or -1))
     if raw then
-      log(table.concat(raw, "\n"), vim.log.levels.DEBUG)
+      print(string.format("git-diff-viewer: %s", table.concat(raw, "\n")))
     end
     return nil
   end
@@ -402,7 +402,7 @@ local function build_diff_buffer(root, entry, config, opts)
     local repo_root = root
     vim.keymap.set("n", config.accept_keymap, function()
       if not repo_root then
-        log("not inside a git repository", vim.log.levels.WARN)
+        print("git-diff-viewer: not inside a git repository")
         return
       end
       if stage_path(repo_root, entry.path) then
@@ -415,7 +415,7 @@ local function build_diff_buffer(root, entry, config, opts)
     local repo_root = root
     vim.keymap.set("n", config.full_file_keymap, function()
       if not repo_root then
-        log("not inside a git repository", vim.log.levels.WARN)
+        print("git-diff-viewer: not inside a git repository")
         return
       end
       local current_entry = state.buf_entries[buf]
@@ -479,7 +479,7 @@ handle_branch_switch = function(root, config)
   collect_and_close_listed_bufs()
   local status, err = system_list(config.status_cmd, root)
   if not status then
-    log("unable to read git status: " .. (err or ""), vim.log.levels.ERROR)
+    print(string.format("git-diff-viewer: unable to read git status: %s", err or ""))
     return
   end
   local files = parse_status(status)
@@ -506,7 +506,7 @@ local function watch_head(root, config)
   end
   local watcher = uv.new_fs_poll()
   if not watcher then
-    log("unable to create fs poll watcher", vim.log.levels.ERROR)
+    print("git-diff-viewer: unable to create fs poll watcher")
     return
   end
   local last = read_file(head)
@@ -570,7 +570,7 @@ end
 function M.refresh()
   local root = detect_root()
   if not root then
-    log("not inside a git repository", vim.log.levels.WARN)
+    print("git-diff-viewer: not inside a git repository")
     return
   end
   handle_branch_switch(root, M.config)
