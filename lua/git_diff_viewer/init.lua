@@ -30,6 +30,8 @@ local state = {
   pending_refresh = {},
 }
 
+local handle_branch_switch
+
 local function log(msg, level)
   level = level or vim.log.levels.INFO
   vim.notify(string.format("git-diff-viewer: %s", msg), level)
@@ -239,7 +241,9 @@ local function wait_for_git_idle(root, config, attempt)
     return
   end
   state.pending_refresh[root] = nil
-  handle_branch_switch(root, config)
+  vim.schedule(function()
+    handle_branch_switch(root, config)
+  end)
 end
 
 local function parse_status(lines)
@@ -468,7 +472,7 @@ local function open_diff_buffers(root, files, config)
   end
 end
 
-local function handle_branch_switch(root, config)
+handle_branch_switch = function(root, config)
   if not state.enabled then
     return
   end
