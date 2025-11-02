@@ -1,16 +1,16 @@
 # git-diff-viewer.nvim
 
-Show unstaged inline diffs whenever you change branches. Designed for AstroNvim but works with any Neovim distribution.
+View unstaged inline diffs for your current branch on demand. Designed for AstroNvim but works with any Neovim distribution.
 
 ## Features
 
-- Watches `.git/HEAD` and reacts as soon as the branch changes.
-- Closes your current listed buffers and opens a fresh tab populated with one scratch buffer per unstaged file (no splits to manage).
+- Toggle diff view on/off with `<leader>agt`, `:GitDiffViewerToggle`, or your own mapping.
+- Opens a fresh tab populated with one buffer per unstaged file (no splits to manage).
 - Highlights additions (`DiffAdd`) and deletions (`DiffDelete`) using standard diff syntax; new files show the entire file as additions, deleted files show the full removed contents.
-- Stage the current file directly from the diff buffer with `<leader>ada` (configurable).
-- Switch to a whole-file diff view (headers stripped) with `<leader>adf`.
-- Toggle on/off with `<leader>ag`, `:GitDiffViewerToggle`, or your own mapping.
-- Optional manual refresh via `:GitDiffViewerRefresh`.
+- When toggled off, diff buffers are closed but files remain open in the editor.
+- Stage the current file directly from the diff buffer with `<leader>aga` (configurable).
+- Switch to a whole-file diff view (headers stripped) with `<leader>agf`.
+- Manual refresh via `:GitDiffViewerRefresh` or `<leader>agr`.
 
 ## Installation
 
@@ -40,15 +40,11 @@ use({
 
 ```lua
 require("git_diff_viewer").setup({
-  enable_on_start = true,  -- start enabled
-  keymap = "<leader>ag",   -- set to false to skip default toggle mapping
-  watch_interval = 750,     -- milliseconds between HEAD checks
-  git_lock_retry_delay = 100, -- delay (ms) before re-checking when Git holds a lock
-  git_lock_max_attempts = 50, -- number of lock checks before giving up
+  keymap = "<leader>agt",   -- set to false to skip default toggle mapping
   open_in_tab = true,       -- open diffs in their own tab page
-  accept_keymap = "<leader>ada", -- buffer-local mapping to stage the file
-  refresh_keymap = "<leader>adr", -- global mapping to refresh the view
-  full_file_keymap = "<leader>adf", -- buffer-local mapping to show whole-file diff
+  accept_keymap = "<leader>aga", -- buffer-local mapping to stage the file
+  refresh_keymap = "<leader>agr", -- global mapping to refresh the view
+  full_file_keymap = "<leader>agf", -- buffer-local mapping to show whole-file diff
   full_file_context = 100000, -- line context for whole-file diff rendering
   diff_cmd = { "git", "diff", "--no-color" },
   status_cmd = { "git", "status", "--porcelain" },
@@ -57,18 +53,17 @@ require("git_diff_viewer").setup({
 
 ## Usage
 
-- Switch branches with `git checkout`, `git switch`, or any tooling. The plugin detects the HEAD change and opens a fresh tab containing one diff buffer per unstaged file (each buffer named after the file).
-- While focused on a diff buffer, press `<leader>ada` to stage the file and refresh the view.
-- Press `<leader>adr` (or `:GitDiffViewerRefresh`) anytime to re-render the diffs after external changes.
-- Press `<leader>adf` inside a diff buffer to swap into a whole-file diff (without the `diff --git`/`index` headers) for easier reading.
-- Use `<leader>ag` (or `:GitDiffViewerToggle`) to disable the watcher and restore your previous buffers.
+- Press `<leader>agt` (or `:GitDiffViewerToggle`) to show diffs for unstaged changes on your current branch. A new tab opens with one diff buffer per unstaged file (each buffer named after the file).
+- While focused on a diff buffer, press `<leader>aga` to stage the file and refresh the view.
+- Press `<leader>agr` (or `:GitDiffViewerRefresh`) anytime to re-render the diffs after external changes.
+- Press `<leader>agf` inside a diff buffer to swap into a whole-file diff (without the `diff --git`/`index` headers) for easier reading.
+- Use `<leader>agt` (or `:GitDiffViewerToggle`) again to hide the diff view. The diff tab is closed, but file buffers remain open in the editor.
 
 ## Notes
 
 - The plugin only lists files with unstaged modifications (including untracked files). Stage or discard changes to remove them from the view.
 - `open_in_tab = false` keeps the diffs in the current tab if you prefer a simpler layout.
-- When disabling the plugin we re-add your previous buffers via `:badd` so they reappear in your buffer list; reopen them manually if you need their windows rebuilt.
-- We wait for Git lock files (e.g. `.git/index.lock`) to disappear before refreshing so branch switches and other Git operations can finish cleanly.
+- When hiding the diff view, the diff tab is closed but all file buffers remain available in your buffer list for easy access.
 
 ## Roadmap
 
